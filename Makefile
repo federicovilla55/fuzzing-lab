@@ -48,10 +48,10 @@ run_wo_corpus:
 ###############################################################################
 # Override CORPUS from the command line if needed:
 #   make coverage CORPUS=build/out/work-corpus
-CORPUS ?= $(OSS_FUZZ_DIR)/work-corpus
+CORPUS ?= build/work/$(PROJECT)/fuzzing_corpus
 coverage:
-	@python3 $(OSS_FUZZ_DIR)/infra/helper.py coverage $(PROJECT) \
-	    --corpus-dir ../../$(CORPUS) --fuzz-target $(FUZZER)
+	@cd $(OSS_FUZZ_DIR) && python3 infra/helper.py coverage $(PROJECT) \
+	    --corpus-dir $(CORPUS) --fuzz-target $(FUZZER)
 
 ###############################################################################
 # Convenience composite targets

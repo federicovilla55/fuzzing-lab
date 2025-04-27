@@ -13,13 +13,13 @@ FLAGS="\
   -max_total_time=$RUNTIME \
   -timeout=25 \
   -print_final_stats=1 \
-  -artifact_prefix=./crashes
-  -jobs=$(nproc) \
-  -workers=0"
+  -artifact_prefix=./crashes"
+
+# -jobs=$(nproc) \
+# -workers=0
 
 ## corpus settings
 ROOT=$(pwd)
-SEED_CORPUS=$ROOT/forks/tmux-fuzzing-corpus
 
 # OSS Fuzz directory
 OSS_FUZZ_DIR=$ROOT/forks/oss-fuzz
@@ -36,42 +36,48 @@ if [ "$REBUILD" = true ]; then
   python3 infra/helper.py build_fuzzers --sanitizer coverage "$PROJECT"
 fi
 
-# 2) Prepare empty corpus
-CORPUS_DIR=$OSS_FUZZ_DIR/build/out/corpus
-rm -rf "$CORPUS_DIR" || true
+# 2) Ensure crashes directory exists
+CORPUS_RELPATH="build/work/$PROJECT/fuzzing_corpus"
+CORPUS_DIR="$OSS_FUZZ_DIR/$CORPUS_RELPATH"
 mkdir -p "$CORPUS_DIR"
 mkdir -p "$CORPUS_DIR/crashes"
-cp -r "$SEED_CORPUS"/* "$CORPUS_DIR" || true
 
 # 3) Run the fuzzer for RUNTIME
 cd "$OSS_FUZZ_DIR"
 python3 infra/helper.py run_fuzzer \
   --engine "$ENGINE" "$PROJECT" \
-  --corpus-dir build/out/corpus \
-  "$HARNESS" "$FLAGS"
+  --corpus-dir "$CORPUS_RELPATH" \
+  "$HARNESS" -- "$FLAGS"
 
-# 4) Stop any remaining Docker containers
-docker stop "$(docker ps -q)" || true
+# --- wait until all docker containers are stopped ---
+for i in {1..60}; do
+  sleep 1
+  # if no containers are running, break the loop
+  if [[ -z "$(docker ps -q)" ]]; then
+    break
+  fi
+  echo "Waiting for containers to stop... ($i seconds elapsed)"
+done
 
-# 5) Zip and store the corpus in `experiments/{timestamp}_w_corpus`
+# 4) Zip and store the corpus in `experiments/{timestamp}_w_corpus`
 ts=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$ROOT/experiments"
 cp -r "$CORPUS_DIR" "$ROOT/experiments/${ts}_w_corpus"
 (cd "$ROOT/experiments" && zip -qr "${ts}_w_corpus.zip" "${ts}_w_corpus")
 
-# 6) Generate HTML coverage report
+# 5) Generate HTML coverage report
 cd "$OSS_FUZZ_DIR"
 python3 infra/helper.py coverage \
   "$PROJECT" \
-  --corpus-dir build/out/corpus \
+  --corpus-dir "$CORPUS_RELPATH" \
   --fuzz-target "$HARNESS" &
 
 # --- wait for the coverage report to be generated ---
 TIMEOUT=300 # total wait time in seconds (300s = 5 minutes)
 GLOBAL_REPORT_DIR="$OSS_FUZZ_DIR/build/out/$PROJECT/report"
+sleep 10
 echo "Waiting for coverage report to be generated..."
 for ((i = 0; i < TIMEOUT; i += 1)); do
-  sleep 1
   # if the report directory exists, break the loop
   if [[ -d "$GLOBAL_REPORT_DIR" ]]; then
     break
@@ -79,10 +85,10 @@ for ((i = 0; i < TIMEOUT; i += 1)); do
   echo "Waiting... ($i seconds elapsed)"
 done
 
-# 7) Stop any remaining Docker containers
+# 6) Stop any remaining Docker containers
 docker stop "$(docker ps -q)" || true
 
-# 8) Copy results to submission directory
+# 7) Copy results to submission directory
 DEST=$ROOT/submission/part_1/${ts}_coverage_w_corpus
 mkdir -p "$DEST"
 cp -r "$GLOBAL_REPORT_DIR" "$DEST/"

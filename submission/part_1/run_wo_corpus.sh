@@ -37,32 +37,29 @@ if [ "$REBUILD" = true ]; then
 fi
 
 # 2) Prepare empty corpus
-CORPUS_DIR=$OSS_FUZZ_DIR/build/out/corpus
-rm -rf "$CORPUS_DIR" || true
-mkdir -p "$CORPUS_DIR"
+CORPUS_RELPATH="build/work/$PROJECT/fuzzing_corpus"
+CORPUS_DIR="$OSS_FUZZ_DIR/$CORPUS_RELPATH"
+rm -rf "$CORPUS_DIR" # ensure the directory is empty
 mkdir -p "$CORPUS_DIR/crashes"
 
 # 3) Run the fuzzer for RUNTIME
 cd "$OSS_FUZZ_DIR"
 python3 infra/helper.py run_fuzzer \
   --engine "$ENGINE" "$PROJECT" \
-  --corpus-dir build/out/corpus \
-  "$HARNESS" "$FLAGS"
+  --corpus-dir "$CORPUS_RELPATH" \
+  "$HARNESS" -- "$FLAGS"
 
-# 4) Stop any remaining Docker containers
-docker stop "$(docker ps -q)" || true
-
-# 5) Zip and store the corpus in `experiments/{timestamp}_wo_corpus`
+# 4) Zip and store the corpus in `experiments/{timestamp}_wo_corpus`
 ts=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$ROOT/experiments"
 cp -r "$CORPUS_DIR" "$ROOT/experiments/${ts}_wo_corpus"
 (cd "$ROOT/experiments" && zip -qr "${ts}_wo_corpus.zip" "${ts}_wo_corpus")
 
-# 6) Generate HTML coverage report
+# 5) Generate HTML coverage report
 cd "$OSS_FUZZ_DIR"
 python3 infra/helper.py coverage \
   "$PROJECT" \
-  --corpus-dir build/out/corpus \
+  --corpus-dir "$CORPUS_RELPATH" \
   --fuzz-target "$HARNESS" &
 
 # --- wait for the coverage report to be generated ---
